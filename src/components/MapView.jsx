@@ -21,7 +21,7 @@ const ArcGISMap = observer(() => {
 
   useEffect(() => {
     // 1. Read URL param
-    const params = new URLSearchParams(window.location.pathname);
+    const params = new URLSearchParams(window.location.search);
     const viewAll = params.get("viewAll") == "true";
     console.log(window.location.search)
     // 2. Define the list of OBJECTIDs to show when viewAll !== true
@@ -32,6 +32,9 @@ const ArcGISMap = observer(() => {
 
     // 3. Build the FeatureLayer options, including a definitionExpression only if needed
     const layerOptions = {
+      elevationInfo: {
+        mode: "on-the-ground"
+      },
       portalItem: { id: "782d7f7e5e0e4d2bbceaa98ceda28216" },
       outFields: ["trk_nm", "RealLen_m"],
       renderer: {
