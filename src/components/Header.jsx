@@ -59,7 +59,7 @@ const InfoContainer = styled.div`
   @media (max-width: 768px) {
     width: 100%;
     margin-left: 0;
-    justify-content: flex-start;
+    justify-content: flex-end;
     margin-top: 10px;
   }
 `;
