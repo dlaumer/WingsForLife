@@ -11,6 +11,7 @@ const Panel = styled.div`
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
   padding: 20px;
   box-sizing: border-box;
+  z-index: 0
 `;
 
 const SidePanel = observer(() => {

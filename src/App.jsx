@@ -23,6 +23,7 @@ const MainContent = styled.div`
 const MapContainer = styled.div`
   flex: 1;
   position: relative;
+  background-color: white;
 `;
 
 const App = observer(() => {
