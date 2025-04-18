@@ -4,10 +4,15 @@ import { observer } from "mobx-react-lite";
 import mapStore from "../store/MapStore";
 import styled from "styled-components";
 import SceneView from "@arcgis/core/views/SceneView";
-import Map from "@arcgis/core/Map";
-import FeatureLayer from "@arcgis/core/layers/FeatureLayer";
 import BasemapGallery from "@arcgis/core/widgets/BasemapGallery";
 import Expand from "@arcgis/core/widgets/Expand";
+import Home from "@arcgis/core/widgets/Home";
+import UniqueValueRenderer from "@arcgis/core/renderers/UniqueValueRenderer";
+
+import WebScene from "@arcgis/core/WebScene";
+
+import bluePinSymbol from "../assets/blue-pin-symbol.svg";
+import redPinSymbol from "../assets/red-pin-symbol.svg";
 
 const MapContainer = styled.div`
   width: 100%;
@@ -16,97 +21,165 @@ const MapContainer = styled.div`
 `;
 
 const ArcGISMap = observer(() => {
+  const viewRef = useRef(null);
   const mapRef = useRef(null);
   const layerRef = useRef(null);
 
+  let tracks = null;
+  let endpoints = null;
+  let buildingsLayer = null;
+  let treesLayer = null;
+
   useEffect(() => {
-    // 1. Read URL param
-    const params = new URLSearchParams(window.location.search);
-    const viewAll = params.get("viewAll") == "true";
-    console.log(window.location.search)
-    // 2. Define the list of OBJECTIDs to show when viewAll !== true
-    const objectIdsToShow = [
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-      /* replace with your actual OBJECTIDs, e.g. 1, 5, 12, 27 */
-    ];
 
-    // 3. Build the FeatureLayer options, including a definitionExpression only if needed
-    const layerOptions = {
-      elevationInfo: {
-        mode: "on-the-ground"
-      },
-      portalItem: { id: "782d7f7e5e0e4d2bbceaa98ceda28216" },
-      outFields: ["trk_nm", "RealLen_m"],
-      renderer: {
-        type: "simple",
-        symbol: {
-          type: "simple-line",
-          color: "#e1003b",
-          width: 3
-        }
+    // Replace with your WebScene portal ID
+    const webscene = new WebScene({
+      portalItem: {
+        id: "4ff212f26a92401e8666bfa497fce8f4"
       }
-    };
-
-    if (!viewAll) {
-      layerOptions.definitionExpression =
-        `FID IN (${objectIdsToShow.join(",")})`;
-    }
-
-    const tracks = new FeatureLayer(layerOptions);
-    layerRef.current = tracks;  // so you can still toggle visibility later
-
-    // 4. Create the map and view
-    const map = new Map({
-      basemap: "dark-gray-3d",
-      ground: "world-elevation"
     });
-    map.add(tracks);  // add filtered or unfiltered layer
 
     const view = new SceneView({
       container: mapRef.current,
-      map: map,
-      camera: {
-        position: [7.09449554, 30.85925410, 15307343.66328],
-        heading: 0,
-        tilt: 0.15
-      },
+      map: webscene,
       popupEnabled: false,
-      popup: {
-        autoOpenEnabled: false,
-        highlightEnabled: false
+      camera: {
+        position: [
+          14.56157909,
+          43.62521184,
+          15305838.15197
+        ],
+        heading: 360.00,
+        tilt: 0.15
       }
     });
+
+    view.when(() => {
+      window.view = view;
+      viewRef.current = view;
+      // Example: Find layers by title
+      tracks = webscene.layers.find(layer => layer.title === "Tracks");
+      endpoints = webscene.layers.find(layer => layer.title === "Endpoints");
+      buildingsLayer = webscene.layers.find(layer => layer.title === "OSM Buildings");
+      treesLayer = webscene.layers.find(layer => layer.title === "OSM Trees");
+
+
+      const endpointRenderer = new UniqueValueRenderer({
+        field: "point_type",
+        uniqueValueInfos: [
+          {
+            value: "start",
+            symbol: {
+              type: "point-3d",
+              symbolLayers: [
+                {
+                  type: "icon",
+                  resource: {
+                    href: redPinSymbol
+                  },
+                  size: 45,
+                  anchor: "relative",
+                  anchorPosition: { x: 0, y: 0.25 }
+                }
+              ],
+              verticalOffset: {
+                screenLength: 20,
+                maxWorldLength: 50,
+                minWorldLength: 15
+              },
+              callout: {
+                type: "line",
+                color: "white",
+                size: 1
+              }
+            },
+            label: "Start Point"
+          },
+        ]
+      });
+
+      endpoints.renderer = endpointRenderer;
+
+      if (tracks && endpoints) {
+        Promise.all([endpoints.load(), tracks.load()]).then(() => {
+          // Ensure we can access fields
+          endpoints.outFields = ["*"];
+          tracks.outFields = ["*"];
+
+          view.on("click", (event) => {
+            view.hitTest(event).then((response) => {
+              const endpointResult = response.results.find(
+                r => r.graphic?.layer === endpoints
+              );
+              const result = response.results.find(
+                (r) => r.graphic && r.graphic.layer === tracks
+              );
+
+
+              if (endpointResult) {
+                const trkName = endpointResult.graphic.attributes.trk_nm;
+
+                // Query the tracks layer for the matching name
+                tracks.queryFeatures({
+                  where: `trk_nm = '${trkName.replace(/'/g, "''")}'`, // escape single quotes
+                  returnGeometry: true,
+                  outFields: ["*"]
+                }).then((result) => {
+                  if (result.features.length > 0) {
+                    const trackFeature = result.features[0];
+                    mapStore.setSelectedName(trackFeature.attributes.trk_nm);
+                    mapStore.setSelectedLength(trackFeature.attributes.RealLen_m);
+                    view.goTo({ target: trackFeature.geometry, tilt: 60 }, { duration: 400 })
+                    .then(() => { rotate() })
+                  }
+                });
+              }
+              else if (result) {
+                const g = result.graphic;
+                mapStore.setSelectedName(g.attributes.trk_nm);
+                mapStore.setSelectedLength(g.attributes.RealLen_m);
+                view.goTo({ target: g.geometry, tilt: 60 }, { duration: 400 })
+                  .then(() => { rotate() })
+              }
+            });
+          });
+        });
+      }
+
+
+
+    });
+
+
+    // basemap gallery
+    const home = new Home({
+      view,
+    });
+    view.ui.add(home, "top-left");
+
 
     // basemap gallery
     const basemaps = new Expand({
       view,
       content: new BasemapGallery({ view })
     });
-    view.ui.add(basemaps, "top-right");
+    view.ui.add(basemaps, "top-left");
 
-    view.when(() => { window.view = view; });
-
-    // click → zoom + tilt + header update
-    const clickHandler = view.on("click", (event) => {
-      view.hitTest(event).then((response) => {
-        const result = response.results.find(
-          (r) => r.graphic && r.graphic.layer === tracks
-        );
-        if (result) {
-          const g = result.graphic;
-          view.goTo({ target: g.geometry, tilt: 45 }, { duration: 400 });
-          mapStore.setSelectedName(g.attributes.trk_nm);
-          mapStore.setSelectedLength(g.attributes.RealLen_m);
-        }
-      });
-    });
 
     return () => {
-      clickHandler.remove();
       view.destroy();
     };
   }, []);
 
+  function rotate() {
+    if (!viewRef.current.interacting) {
+      viewRef.current.goTo({
+        heading: viewRef.current.camera.heading + 0.2,
+        center: viewRef.current.center
+      }, { animate: false });
+      requestAnimationFrame(rotate);
+    }
+  }
   // allow toggling layer visibility via your store
   useEffect(() => {
     if (layerRef.current) {

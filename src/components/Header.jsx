@@ -68,6 +68,10 @@ const InfoItem = styled.div`
   font-family: "Arial", sans-serif;
   font-size: 22px;
   white-space: nowrap;
+   @media (max-width: 768px) {
+      font-size: 16px;
+
+  }
 `;
 
 const Header = observer(() => (
